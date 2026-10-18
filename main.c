@@ -1,3 +1,5 @@
+#include "neslib/neslib.h"
+
 int main() {
     unsigned char one = 1;
     unsigned char two = 2;
