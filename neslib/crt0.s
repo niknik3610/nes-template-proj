@@ -263,3 +263,6 @@ sounds_data:
 	.word start	;$fffc reset
 	.word irq	;$fffe irq / brk
 
+.segment "CHARS"
+    .incbin "tiles.chr"
+
