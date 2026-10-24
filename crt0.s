@@ -285,4 +285,4 @@ sounds_data:
 
 .segment "CHARS"
 
-	.incbin "include/Alpha.chr"
+	.incbin "tiles.chr"

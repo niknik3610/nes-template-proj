@@ -12,8 +12,6 @@
 unsigned char oam_off;
 #pragma bss-name (pop)
 
-const unsigned char text[]="Hello World!"; 
-
 //black must be 0x0f, white must be 0x30
 const unsigned char palette[]={
 BLACK, DK_GY, LT_GY, WHITE,
@@ -22,35 +20,84 @@ BLACK, DK_GY, LT_GY, WHITE,
 0,0,0,0
 };
 
+#define BALL_LOCATION_TILES 1
+#define L_WALL_LOCATION_TILES 2
+#define R_WALL_LOCATION_TILES 3
+
+#define SCREEN_WIDTH 32
+#define SCREEN_HEIGHT 30
+
+#define PLAYER_LEN 3
+
+// example of non-sequential vram data
+unsigned char ball[] = {
+0,
+0,
+BALL_LOCATION_TILES,
+0,
+0,
+0,
+NT_UPD_EOF}; // data must end in EOF
+
+unsigned char wall_l[] = {
+0,
+0,
+L_WALL_LOCATION_TILES,
+NT_UPD_EOF};
+
+unsigned char wall_r[] = {
+0,
+0,
+R_WALL_LOCATION_TILES,
+NT_UPD_EOF};
+
+unsigned char player_buf[4 * PLAYER_LEN + 1];
+
+unsigned char i;
+unsigned char timer;
+
+unsigned char player_0_location_y;
+unsigned char player_1_location_y;
 
 int main() {
-    //If you define this as a global instead, it is much faster
-	unsigned char i = 0;
-
 	ppu_off(); // screen off
 
 	pal_bg(palette); //	load the BG palette
-		
-	// set a starting point on the screen
-	// vram_adr(NTADR_A(x,y));
-	vram_adr(NTADR_A(10,14)); // screen is 32 x 30 tiles
-
-
-	while(text[i]){
-		vram_put(text[i]); // this pushes 1 char to the screen
-		++i;
-	}	
-	
-	// vram_adr and vram_put only work with screen off
-	// NOTE, you could replace everything between i = 0; and here with...
-	// vram_write(text,sizeof(text));
-	// does the same thing
-	
 	ppu_on_all(); //	turn on screen
-	
-	while (1){
-		// infinite loop
-		// game code can go here later.
-		
-	}
+    
+    player_0_location_y = SCREEN_HEIGHT >> 1;
+    player_1_location_y = SCREEN_HEIGHT >> 1;
+
+    for (i = 0; i < PLAYER_LEN; i++) {
+        player_buf[4 * i + 0] = MSB(NTADR_A(0, player_0_location_y + i));
+        player_buf[4 * i + 1] = LSB(NTADR_A(0, player_0_location_y + i));
+        player_buf[4 * i + 2] = wall_l[2];
+        player_buf[4 * i + 3] = wall_l[3];
+    }
+    player_buf[4 * PLAYER_LEN] = NT_UPD_EOF;
+
+    set_vram_update(player_buf);
+    ppu_wait_nmi();
+
+    for (i = 0; i < PLAYER_LEN; i++) {
+        player_buf[4 * i + 0] = MSB(NTADR_A(SCREEN_WIDTH - 1, player_1_location_y + i));
+        player_buf[4 * i + 1] = LSB(NTADR_A(SCREEN_WIDTH - 1, player_1_location_y + i));
+        player_buf[4 * i + 2] = wall_r[2];
+        player_buf[4 * i + 3] = wall_r[3];
+    }
+    player_buf[4 * PLAYER_LEN] = NT_UPD_EOF;
+    set_vram_update(player_buf);
+    ppu_wait_nmi();
+
+    i = 0;
+    while(1) {
+        ball[0] = MSB(NTADR_A(i, 14));
+        ball[1] = LSB(NTADR_A(i, 14));
+        set_vram_update(ball);
+        ppu_wait_nmi();
+
+        ball[3] = MSB(NTADR_A(i, 14));
+        ball[4] = LSB(NTADR_A(i, 14));
+        i = i % (SCREEN_WIDTH - 1) + 1;
+    }
 }
