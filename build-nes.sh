@@ -1,5 +1,5 @@
-PATH=$PATH:./cc65
-export CC65_HOME=./cc65
+PATH=$PATH:../cc65/bin/
+export CC65_HOME=../cc65
 FILE_NAME="main.c"
 TARGET="bin/main.nes"
 INCLUDES="./include"
