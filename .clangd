@@ -1,0 +1,7 @@
+CompileFlags:
+  Add:
+    - -D__fastcall__=
+    - -D__cdecl__=
+    - -D__near__=
+    - -D__far__=
+    - -Wno-unknown-pragmas
