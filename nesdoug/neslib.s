@@ -2,6 +2,15 @@
 ;with improvements by VEG
 ;Feel free to do anything you want with this code, consider it Public Domain
 
+;for nesdoug version 1.2, 1/1/2022
+;changed nmi to prevent possible incomplete sprite
+;added a little bit at the end of _flush_vram_update
+;changed the name of flush_vram_update_nmi to flush_vram_update2
+
+;minor change %%, added ldx #0 to functions returning char
+;removed sprid from c functions to speed them up
+
+
 
 	.export _pal_all,_pal_bg,_pal_spr,_pal_col,_pal_clear
 	.export _pal_bright,_pal_spr_bright,_pal_bg_bright
@@ -17,9 +26,9 @@
 	.export _rand8,_rand16,_set_rand
 	.export _vram_adr,_vram_put,_vram_fill,_vram_inc,_vram_unrle
 	.export _set_vram_update,_flush_vram_update
-	.export _memfill,_delay
-	.export _get_ppu_ctrl_var,_set_ppu_ctrl_var
-	.export _nesclock
+	.export _memcpy,_memfill,_delay
+	
+	.export _flush_vram_update2, _oam_set, _oam_get
 
 
 
@@ -34,10 +43,17 @@ nmi:
 
 	lda <PPU_MASK_VAR	;if rendering is disabled, do not access the VRAM at all
 	and #%00011000
-	bne @doUpdate
+	bne @renderingOn
 	jmp	@skipAll
+	
+@renderingOn:	
+	lda <VRAM_UPDATE ;is the frame complete?
+	bne @doUpdate
+	jmp @skipAll ;skipUpd
 
 @doUpdate:
+	lda #0
+	sta <VRAM_UPDATE
 
 	lda #>OAM_BUF		;update OAM
 	sta PPU_OAM_DMA
@@ -59,14 +75,14 @@ nmi:
 	lda (PAL_BG_PTR),y
 	sta PPU_DATA
 	tax
-
+	
 	.repeat 3,I
 	ldy PAL_BUF+1+I
 	lda (PAL_BG_PTR),y
 	sta PPU_DATA
 	.endrepeat
 
-	.repeat 3,J
+	.repeat 3,J		
 	stx PPU_DATA			;background color
 	.repeat 3,I
 	ldy PAL_BUF+5+(J*4)+I
@@ -75,7 +91,7 @@ nmi:
 	.endrepeat
 	.endrepeat
 
-	.repeat 4,J
+	.repeat 4,J		
 	stx PPU_DATA			;background color
 	.repeat 3,I
 	ldy PAL_BUF+17+(J*4)+I
@@ -85,16 +101,11 @@ nmi:
 	.endrepeat
 
 @updVRAM:
-
-	lda <VRAM_UPDATE
-	beq @skipUpd
-	lda #0
-	sta <VRAM_UPDATE
-
+	
 	lda <NAME_UPD_ENABLE
 	beq @skipUpd
 
-	jsr _flush_vram_update_nmi
+	jsr _flush_vram_update2
 
 @skipUpd:
 
@@ -323,22 +334,7 @@ _ppu_mask:
 _ppu_system:
 
 	lda <NTSC_MODE
-	ldx #$00
-	rts
-
-;unsigned char __fastcall__ get_ppu_ctrl_var(void);
-
-_get_ppu_ctrl_var:
-
-	lda <PPU_CTRL_VAR
-	ldx #$00
-	rts
-
-;void __fastcall__ set_ppu_ctrl_var(unsigned char var);
-
-_set_ppu_ctrl_var:
-
-	sta <PPU_CTRL_VAR
+	ldx #0
 	rts
 
 
@@ -348,6 +344,7 @@ _set_ppu_ctrl_var:
 _oam_clear:
 
 	ldx #0
+	stx SPRID ; automatically sets sprid to zero
 	lda #$ff
 @1:
 	sta OAM_BUF,x
@@ -357,6 +354,26 @@ _oam_clear:
 	inx
 	bne @1
 	rts
+	
+	
+;void __fastcall__ oam_set(unsigned char index);	
+;to manually set the position
+;a = sprid
+
+_oam_set:
+	and #$fc ;strip those low 2 bits, just in case
+	sta SPRID
+	rts
+	
+	
+;unsigned char __fastcall__ oam_get(void);	
+;returns the sprid
+
+_oam_get:
+	lda SPRID
+	ldx #0
+	rts
+	
 
 
 
@@ -380,16 +397,16 @@ _oam_size:
 
 
 
-;unsigned char __fastcall__ oam_spr(unsigned char x,unsigned char y,unsigned char chrnum,unsigned char attr,unsigned char sprid);
+;void __fastcall__ oam_spr(unsigned char x,unsigned char y,unsigned char chrnum,unsigned char attr);
+;sprid removed
 
 _oam_spr:
 
-	tax
-
-	ldy #0		;four popa calls replacement
-	lda (sp),y
-	iny
+	ldx SPRID
+	;a = chrnum
 	sta OAM_BUF+2,x
+
+	ldy #0		;3 popa calls replacement
 	lda (sp),y
 	iny
 	sta OAM_BUF+1,x
@@ -401,7 +418,7 @@ _oam_spr:
 
 	lda <sp
 	clc
-	adc #4
+	adc #3 ;4
 	sta <sp
 	bcc @1
 	inc <sp+1
@@ -411,27 +428,27 @@ _oam_spr:
 	txa
 	clc
 	adc #4
-	ldx #$00
+	sta SPRID
 	rts
 
 
 
-;unsigned char __fastcall__ oam_meta_spr(unsigned char x,unsigned char y,unsigned char sprid,const unsigned char *data);
+;void __fastcall__ oam_meta_spr(unsigned char x,unsigned char y,const unsigned char *data);
+;sprid removed
 
 _oam_meta_spr:
 
 	sta <PTR
 	stx <PTR+1
 
-	ldy #2		;three popa calls replacement, performed in reversed order
+	ldy #1		;2 popa calls replacement, performed in reversed order
 	lda (sp),y
 	dey
 	sta <SCRX
 	lda (sp),y
-	dey
 	sta <SCRY
-	lda (sp),y
-	tax
+	
+	ldx SPRID
 
 @1:
 
@@ -462,24 +479,24 @@ _oam_meta_spr:
 @2:
 
 	lda <sp
-	adc #2			;carry is always set here, so it adds 3
+	adc #1 ;2			;carry is always set here, so it adds 3
 	sta <sp
 	bcc @3
 	inc <sp+1
 
 @3:
 
-	txa
-	ldx #$00
+	stx SPRID
 	rts
 
 
 
-;void __fastcall__ oam_hide_rest(unsigned char sprid);
+;void __fastcall__ oam_hide_rest(void);
+;sprid removed
 
 _oam_hide_rest:
 
-	tax
+	ldx SPRID
 	lda #240
 
 @1:
@@ -490,6 +507,8 @@ _oam_hide_rest:
 	inx
 	inx
 	bne @1
+	;x is zero
+	stx SPRID
 	rts
 
 
@@ -633,11 +652,11 @@ _scroll:
 
 
 
-;;void __fastcall__ split(unsigned int x,unsigned int y);
-
+;;void __fastcall__ split(unsigned int x);
+;minor changes %%
 _split:
 
-	jsr popax
+;	jsr popax
 	sta <SCROLL_X1
 	txa
 	and #$01
@@ -817,7 +836,7 @@ _sfx_play:
 @sfxPriority:
 
 	.byte FT_SFX_CH0,FT_SFX_CH1,FT_SFX_CH2,FT_SFX_CH3
-
+	
 .else
 	rts
 .endif
@@ -838,12 +857,13 @@ _sample_play:
 _pad_poll:
 
 	tay
-	ldx #0
+	ldx #3
 
 @padPollPort:
 
 	lda #1
 	sta CTRL_PORT1
+	sta <PAD_BUF-1,x
 	lda #0
 	sta CTRL_PORT1
 	lda #8
@@ -853,12 +873,10 @@ _pad_poll:
 
 	lda CTRL_PORT1,y
 	lsr a
-	ror <PAD_BUF,x
-	dec <TEMP
-	bne @padPollLoop
+	rol <PAD_BUF-1,x
+	bcc @padPollLoop
 
-	inx
-	cpx #3
+	dex
 	bne @padPollPort
 
 	lda <PAD_BUF
@@ -877,8 +895,8 @@ _pad_poll:
 	sta <PAD_STATET,y
 	txa
 	sta <PAD_STATEP,y
-
-	ldx #$00
+	
+	ldx #0
 	rts
 
 
@@ -892,7 +910,7 @@ _pad_trigger:
 	pla
 	tax
 	lda <PAD_STATET,x
-	ldx #$00
+	ldx #0
 	rts
 
 
@@ -903,7 +921,7 @@ _pad_state:
 
 	tax
 	lda <PAD_STATE,x
-	ldx #$00
+	ldx #0
 	rts
 
 
@@ -941,7 +959,7 @@ _rand8:
 	jsr rand1
 	jsr rand2
 	adc <RAND_SEED
-	ldx #$00
+	ldx #0
 	rts
 
 
@@ -988,7 +1006,7 @@ _flush_vram_update:
 	sta <NAME_UPD_ADR+0
 	stx <NAME_UPD_ADR+1
 
-_flush_vram_update_nmi:
+_flush_vram_update2: ;minor changes %
 
 	ldy #0
 
@@ -1053,11 +1071,17 @@ _flush_vram_update_nmi:
 	jmp @updName
 
 @updDone:
-
+;changed to automatically clear these
+.ifdef VRAM_BUF
+	ldx #$ff
+	stx VRAM_BUF
+	inx ;x=0
+	stx VRAM_INDEX
+.endif
 	rts
-
-
-
+	
+	
+	
 ;void __fastcall__ vram_adr(unsigned int adr);
 
 _vram_adr:
@@ -1136,6 +1160,54 @@ _vram_inc:
 
 
 
+;void __fastcall__ memcpy(void *dst,void *src,unsigned int len);
+
+_memcpy:
+
+	sta <LEN
+	stx <LEN+1
+	jsr popax
+	sta <SRC
+	stx <SRC+1
+	jsr popax
+	sta <DST
+	stx <DST+1
+
+	ldx #0
+
+@1:
+
+	lda <LEN+1
+	beq @2
+	jsr @3
+	dec <LEN+1
+	inc <SRC+1
+	inc <DST+1
+	jmp @1
+
+@2:
+
+	ldx <LEN
+	beq @5
+
+@3:
+
+	ldy #0
+
+@4:
+
+	lda (SRC),y
+	sta (DST),y
+	iny
+	dex
+	bne @4
+
+@5:
+
+	rts
+
+
+
 ;void __fastcall__ memfill(void *dst,unsigned char value,unsigned int len);
 
 _memfill:
@@ -1181,12 +1253,6 @@ _memfill:
 	rts
 
 
-;unsigned char __fastcall__ nesclock(void);
-
-_nesclock:
-	lda <FRAME_CNT1
-	ldx #$00
-	rts
 
 ;void __fastcall__ delay(unsigned char frames);
 
@@ -1238,4 +1304,5 @@ palBrightTable8:
 	.byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
 	.byte $30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30,$30
 
-	.include "famitone2.sinc"
+;;	.include "famitone2.s"
+; included in crt0.s

@@ -1,4 +1,5 @@
-#include "neslib/neslib.h"
+#include "nesdoug/nesdoug.h"
+#include "nesdoug/neslib.h"
 
 #define BLACK 0x0f
 #define DK_GY 0x00
