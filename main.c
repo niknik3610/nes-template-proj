@@ -27,6 +27,7 @@
 unsigned char oam_off;
 #pragma bss-name (pop)
 
+unsigned char i;
 //black must be 0x0f, white must be 0x30
 const unsigned char palette[]={
     BLACK, DK_GY, LT_GY, WHITE,
@@ -35,35 +36,47 @@ const unsigned char palette[]={
     0,0,0,0
 };
 
-unsigned char ball_buf[] = {
-    0,
-    0,
-    BALL_SPRITE_LOC,
-    0,
-    0,
-    EMPTY_SPRITE_LOC,
-    NT_UPD_EOF
-};
-
-//For use when you want to delete something from the screen
-unsigned char empty_buf[] = {
-    0,
-    0,
-    EMPTY_SPRITE_LOC,
-};
-
-struct  GameObject {
+typedef struct {
     unsigned char pos[2];
     unsigned char sprite_loc;
-};
+} GameObject;
 
-struct GameObject game_object_make(unsigned char loc[2], unsigned char sprite_loc) {
-    struct GameObject obj = {
-        .pos = {loc[0], loc[1]},
-        .sprite_loc = sprite_loc
-    };
+void game_object_make(GameObject* out, unsigned char loc[2], unsigned char sprite_loc) {
+    out->pos[0] = loc[0];
+    out->pos[1] = loc[1];
+    out->sprite_loc = sprite_loc;
+}
 
-    return obj;
+typedef struct {
+    unsigned char size;
+    GameObject inner[];
+} GameObjectGroup;
+
+/// Copies game_objects into the Group. Assumes out has been allocated with the correct size
+void game_object_group_make(GameObjectGroup* out, GameObject* objects, unsigned char object_count) {
+    for (i = 0; i < object_count; i++) {
+        out->inner[i] = objects[i];
+    }
+    out->size = object_count;
+}
+
+void game_object_group_move(GameObjectGroup* group, unsigned char movement_vector[2]) {
+    for (i = 0; i < group->size; i++) {
+        GameObject* curr_obj = group->inner + i;
+        curr_obj->pos[X] += movement_vector[X];
+        curr_obj->pos[Y] += movement_vector[Y];
+    }
+}
+
+/// Assumes group_one & group_two are the same size
+void game_object_group_copy_positions(GameObjectGroup* dest_group, GameObjectGroup* src_group) {
+    for (i = 0; i < dest_group->size; i++) {
+        GameObject* dst_obj = dest_group->inner + i;
+        GameObject* src_obj = src_group->inner + i;
+
+        dst_obj->pos[X] = src_obj->pos[X];
+        dst_obj->pos[Y] = src_obj->pos[Y];
+    }
 }
 
 typedef struct {
@@ -72,14 +85,11 @@ typedef struct {
     unsigned char vram_buf[MAXIMUM_VRAM_ITEMS * VRAME_ITEM_SIZE + 1];
 } VramBuf;
 
-VramBuf vram_buf_make() {
-    VramBuf buf = {
-        .max_capacity = MAXIMUM_VRAM_ITEMS * VRAME_ITEM_SIZE + 1,
-        .len = 0,
-        .vram_buf = {}
-    };
-    return buf;
+void vram_buf_make(VramBuf* out) {
+   out->max_capacity = MAXIMUM_VRAM_ITEMS * VRAME_ITEM_SIZE + 1;
+   out->len = 0;
 }
+
 int vram_buf_push(VramBuf* buf, GameObject* obj) {
     unsigned char curr_len = buf->len;
     if (curr_len >= buf->max_capacity) {
@@ -95,13 +105,23 @@ int vram_buf_push(VramBuf* buf, GameObject* obj) {
 }
 
 void vram_buf_finish(VramBuf* buf) {
-    buf->vram_buf[buf->len] = EMPTY_SPRITE_LOC;
+    buf->vram_buf[buf->len] = NT_UPD_EOF;
     buf->len = 0;
 }
 
+GameObject empty_obj;
+VramBuf vram_buf;
+void game_object_move(GameObject* obj, unsigned char mov_vec[2]) {
+    empty_obj.pos[X] = obj->pos[X];
+    empty_obj.pos[Y] = obj->pos[Y];
+    vram_buf_push(&vram_buf, &empty_obj);
+    
+    obj->pos[X] += mov_vec[X];
+    obj->pos[Y] += mov_vec[Y];
+    vram_buf_push(&vram_buf, obj);
+}
 
 // unsigned char player_buf[3 * PLAYER_LEN + 1];
-
 unsigned char i;
 char negative;
 unsigned char timer;
@@ -112,11 +132,11 @@ unsigned char ball_spawn_point[] = {1, 14};
 //
 // unsigned char ball_loc[] = {0, 14};
 
-VramBuf vram_buf;
 GameObject player_0_obj, player_1_obj;
 GameObject ball_obj;
 
-char ball_movement_vec[] = {-1, 0};
+unsigned char ball_movement_vec[] = {1, 0};
+unsigned char zeroed_location[] = {0, 0};
 
 // void update_player_video_buf(unsigned char wall_sprite, unsigned char x, unsigned char y) {
 //     for (i = 0; i < PLAYER_LEN; i++) {
@@ -145,10 +165,11 @@ int main() {
 	pal_bg(palette); //	load the BG palette
 	ppu_on_all(); //	turn on screen
 
-    vram_buf = vram_buf_make();
-    player_0_obj = game_object_make(player_0_spawn_point, L_WALL_SPRITE_LOC);
-    player_1_obj = game_object_make(player_1_spawn_point, R_WALL_SPRITE_LOC);
-    ball_obj = game_object_make(ball_spawn_point, BALL_SPRITE_LOC);
+    vram_buf_make(&vram_buf);
+    game_object_make(&player_0_obj, player_0_spawn_point, L_WALL_SPRITE_LOC);
+    game_object_make(&player_1_obj, player_1_spawn_point, R_WALL_SPRITE_LOC);
+    game_object_make(&ball_obj, ball_spawn_point, BALL_SPRITE_LOC);
+    game_object_make(&empty_obj, zeroed_location, EMPTY_SPRITE_LOC);
 
     vram_buf_push(&vram_buf, &player_0_obj);
     vram_buf_push(&vram_buf, &player_1_obj);
@@ -157,21 +178,12 @@ int main() {
     set_vram_update(vram_buf.vram_buf);
     ppu_wait_nmi();
 
-
-    
-    // update_player_video_buf(L_WALL_SPRITE_LOC, player_0_loc[X], player_0_loc[Y]);
-    // set_vram_update(player_buf);
-    // ppu_wait_nmi();
-    //
-    // update_player_video_buf(R_WALL_SPRITE_LOC, player_1_loc[X], player_1_loc[Y]);
-    // set_vram_update(player_buf);
-    // ppu_wait_nmi();
-
     i = 0;
     negative = 1;
     while(1) {
-        // update_ball();
-        // set_vram_update(ball_buf);
-        // ppu_wait_nmi();
+        game_object_move(&ball_obj, ball_movement_vec);
+        vram_buf_finish(&vram_buf);
+        set_vram_update(vram_buf.vram_buf);
+        ppu_wait_nmi();
     }
 }
