@@ -111,26 +111,23 @@ void vram_buf_finish(VramBuf* buf) {
 
 GameObject empty_obj;
 VramBuf vram_buf;
+/// Moves the game object & the empty object. Does not push
 void game_object_move(GameObject* obj, unsigned char mov_vec[2]) {
     empty_obj.pos[X] = obj->pos[X];
     empty_obj.pos[Y] = obj->pos[Y];
-    vram_buf_push(&vram_buf, &empty_obj);
-    
     obj->pos[X] += mov_vec[X];
     obj->pos[Y] += mov_vec[Y];
-    vram_buf_push(&vram_buf, obj);
 }
 
-// unsigned char player_buf[3 * PLAYER_LEN + 1];
-unsigned char i;
+unsigned char player_0_score;
+unsigned char player_1_score;
+
 char negative;
 unsigned char timer;
 
 unsigned char player_0_spawn_point[] = {0, (SCREEN_HEIGHT >> 1) - 1};
 unsigned char player_1_spawn_point[] = {SCREEN_WIDTH - 1, (SCREEN_HEIGHT >> 1) - 1};
-unsigned char ball_spawn_point[] = {1, 14};
-//
-// unsigned char ball_loc[] = {0, 14};
+unsigned char ball_spawn_point[] = {2, 14};
 
 GameObject player_0_obj, player_1_obj;
 GameObject ball_obj;
@@ -138,26 +135,12 @@ GameObject ball_obj;
 unsigned char ball_movement_vec[] = {1, 0};
 unsigned char zeroed_location[] = {0, 0};
 
-// void update_player_video_buf(unsigned char wall_sprite, unsigned char x, unsigned char y) {
-//     for (i = 0; i < PLAYER_LEN; i++) {
-//         player_buf[3 * i + 0] = MSB(NTADR_A(x, y + i));
-//         player_buf[3 * i + 1] = LSB(NTADR_A(x, y + i));
-//         player_buf[3 * i + 2] = wall_sprite;
-//     }
-//     player_buf[3 * PLAYER_LEN] = NT_UPD_EOF;
-// }
-//
-// void update_buf_location(unsigned char* buf, unsigned char x, unsigned char y) {
-//     buf[0] = MSB(NTADR_A(x, y));
-//     buf[1] = LSB(NTADR_A(x, y));
-// }
-//
-// void update_ball() {
-//     update_buf_location(ball_buf + 3, ball_loc[X], ball_loc[Y]);
-//     ball_loc[X] += ball_movement_vec[X];
-//     ball_loc[Y] += ball_movement_vec[Y];
-//     update_buf_location(ball_buf, ball_loc[X], ball_loc[Y]);
-// }
+unsigned char check_player_ball_collision() {
+    unsigned char player_0_collision, player_1_collision;
+    player_0_collision = ball_obj.pos[X] == player_0_obj.pos[X] && ball_obj.pos[Y] == player_0_obj.pos[Y];
+    player_1_collision = ball_obj.pos[X] == player_1_obj.pos[X] && ball_obj.pos[Y] == player_1_obj.pos[Y];
+    return player_0_collision || player_1_collision;
+}
 
 int main() {
 	ppu_off(); // screen off
@@ -178,11 +161,20 @@ int main() {
     set_vram_update(vram_buf.vram_buf);
     ppu_wait_nmi();
 
-    i = 0;
-    negative = 1;
     while(1) {
         game_object_move(&ball_obj, ball_movement_vec);
+        
+        if (check_player_ball_collision()) {
+            
+            ball_movement_vec[X] *= -1;
+            game_object_move(&ball_obj, ball_movement_vec);
+            game_object_move(&ball_obj, ball_movement_vec);
+        }
+
+        vram_buf_push(&vram_buf, &empty_obj);
+        vram_buf_push(&vram_buf, &ball_obj);
         vram_buf_finish(&vram_buf);
+
         set_vram_update(vram_buf.vram_buf);
         ppu_wait_nmi();
     }
